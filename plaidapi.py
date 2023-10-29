@@ -21,41 +21,43 @@ from typing import Optional, List
 
 class AccountBalance:
     def __init__(self, data):
-        self.raw_data = data.to_dict()
-        self.account_id        = data['account_id']
-        self.account_name      = data['name']
-        self.account_type      = str(data['type'])
-        self.account_subtype   = data['subtype']
-        self.account_number    = data['mask']
-        self.balance_current   = data['balances']['current']
-        self.balance_available = data['balances']['available']
-        self.balance_limit     = data['balances']['limit']
-        self.currency_code     = data['balances']['iso_currency_code']
+        # account_id | bal_amount | bal_date
+        self.account_id = data['account_id']
+        self.account_name = data['account_name']
+        self.bal_amount = data['balances']['current']
+        self.bal_date = datetime.date.today()
 
 
 class AccountInfo:
     def __init__(self, data):
-        self.raw_data = data.to_dict()
-        self.item_id                   = data['item']['item_id']
-        self.institution_id            = data['item']['institution_id']
-        self.ts_consent_expiration     = parse_optional_iso8601_timestamp(data['item']['consent_expiration_time'])
-        self.ts_last_failed_update     = parse_optional_iso8601_timestamp(data['status']['transactions']['last_failed_update'])
-        self.ts_last_successful_update = parse_optional_iso8601_timestamp(data['status']['transactions']['last_successful_update'])
+        # account_id | account_name | account_type | account_subtype | account_number
+        self.account_id = data['account_id']
+        self.account_name = data['name']
+        self.account_type = data['type']
+        self.account_subtype = data['subtype']
+        self.account_number = data['mask']
 
 
 class Transaction:
     def __init__(self, data):
+        # account_id | account_name | account_type | account_subtype | category | txn_id | txn_date | txn_name
+        # txn_name_plaid | txn_amount | txn_category_plaid | txn_code | pending | created | updated | raw_data
         if type(data) == dict:
             self.raw_data = data
         else:
             self.raw_data = data.to_dict()
-        self.account_id     = data['account_id']
-        self.date           = data['date']
-        self.transaction_id = data['transaction_id']
-        self.pending        = data['pending']
-        self.merchant_name  = data['merchant_name']
-        self.amount         = data['amount']
-        self.currency_code  = data['iso_currency_code']
+        self.account_id = data['account_id']
+        self.category = data['category']
+        self.txn_id = data['transaction_id']
+        self.txn_date = data['date']
+        self.txn_name = data['name']
+        self.txn_name_plaid = data['merchant_name']
+        self.txn_amount = data['amount']
+        self.txn_category_plaid = data['category']
+        self.txn_code = data['code']
+        self.pending = data['pending']
+        self.created = datetime.date.today()
+        self.updated = datetime.date.today()
 
     def __str__(self):
         return "%s %s %s - %4.2f %s" % ( self.date, self.transaction_id, self.merchant_name, self.amount, self.currency_code )
@@ -218,16 +220,6 @@ class PlaidAPI():
 
         return self.client.sandbox_item_reset_login(request)
 
-    @wrap_plaid_error
-    def get_item_info(self, access_token: str)->AccountInfo:
-        """
-        Returns account information associated with this particular access token.
-        """
-
-        request = ItemGetRequest(access_token=access_token)
-        response = self.client.item_get(request)
-
-        return AccountInfo(response)
 
     @wrap_plaid_error
     def get_account_balance(self, access_token:str)->List[AccountBalance]:
@@ -237,6 +229,17 @@ class PlaidAPI():
         request = AccountsBalanceGetRequest(access_token=access_token)
         resp = self.client.accounts_balance_get(request)
         return list( map( AccountBalance, resp['accounts'] ) )
+    
+
+    @wrap_plaid_error
+    def get_account_info(self, access_token:str)->List[AccountBalance]:
+        """
+        Returns the account information from balances request
+        """
+        request = AccountsBalanceGetRequest(access_token=access_token)
+        resp = self.client.accounts_balance_get(request)
+        return list( map( AccountInfo, resp['accounts'] ) )
+
 
     @wrap_plaid_error
     def get_transactions(self, access_token:str, start_date:datetime.date, end_date:datetime.date, account_ids:Optional[List[str]]=None, status_callback=None):

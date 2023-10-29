@@ -3,46 +3,18 @@
 import sqlite3
 import json
 import datetime
-
 from typing import List, Optional, Dict
-
 from plaidapi import AccountBalance, AccountInfo, Transaction as PlaidTransaction
+
+# TODO - check primary key on transactions
+# TODO - get rid of archive
 
 def build_placeholders(list):
     return ",".join(["?"]*len(list))
 
 class TransactionsDB():
-    def __init__(self, dbfile:str):
-        self.conn = sqlite3.connect(dbfile) 
-
-        c = self.conn.cursor()
-        c.execute("""
-            create table if not exists transactions
-                (account_id, transaction_id, created, updated, archived, plaid_json)
-            """)
-        c.execute("create unique index if not exists accounts_idx     ON transactions(account_id, transaction_id)");
-        c.execute("create unique index if not exists transactions_idx ON transactions(transaction_id)")
-
-        c.execute("""
-            create table if not exists balances
-                (date, item_id, account_id, account_type, balance_current, balance_available, balance_limit, currency_code, updated, plaid_json)
-        """)
-        c.execute("create unique index if not exists balances_idx ON balances(item_id, account_id, date)")
-
-        c.execute("""
-            create table if not exists items
-                (item_id, institution_id, consent_expiration, last_failed_update, last_successful_update, updated, plaid_json)
-        """)
-        c.execute("create unique index if not exists items_idx ON items(item_id)")
-
-        self.conn.commit()
-
-        # This might be needed if there's not consistent support for json_extract in sqlite3 installations
-        # this will need to be modified to support the "$.prop" syntax
-        #def json_extract(json_str, prop):
-        #    ret = json.loads(json_str).get(prop, None)
-        #    return ret
-        #self.conn.create_function("json_extract", 2, json_extract)
+    def __init__(self, dbfolder:str):
+        self.dbfolder = dbfolder
 
     def get_transaction_ids(self, start_date: datetime.date, end_date: datetime.date, account_ids: List[str]) -> List[str]:
         c = self.conn.cursor()
@@ -107,25 +79,14 @@ class TransactionsDB():
 
         self.conn.commit()
 
-    def save_balance(self, item_id: str, balance: AccountBalance):
-        c = self.conn.cursor()
+    def save_balance(self, balance: list):
+        # Create pandas table with balances
 
-        c.execute("""
-            insert into
-                balances(date, item_id, account_id, account_type, balance_current, balance_available, balance_limit, currency_code, updated, plaid_json)
-                values(strftime('%Y-%m-%d', 'now'),?,?,?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%SZ', 'now'), ?)
-                on conflict(item_id, account_id, date) DO UPDATE
-                    set updated    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-                        account_type = excluded.account_type,
-                        balance_current = excluded.balance_current,
-                        balance_available = excluded.balance_available,
-                        balance_limit = excluded.balance_limit,
-                        currency_code = excluded.currency_code,
-                        plaid_json = excluded.plaid_json
-        """, [item_id, balance.account_id, balance.account_type, balance.balance_current, balance.balance_available, 
-              balance.balance_limit, balance.currency_code, json.dumps(balance.raw_data, default=str)])
+        # Load existing file and append if available
 
-        self.conn.commit()
+        # Write out to parquet
+
+        pass
 
     def fetch_transactions_by_id(self, transaction_ids: List[str]) -> List[PlaidTransaction]:
         c = self.conn.cursor()

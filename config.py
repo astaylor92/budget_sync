@@ -11,7 +11,7 @@ environment = development
 suppress_warnings=true
 
 [plaid-sync]
-dbfile = /data/transactions.db
+dbfile = /data/transactions
 
 [Account1]
 access_token = access-development-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx

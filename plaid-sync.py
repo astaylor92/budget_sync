@@ -5,12 +5,15 @@ import datetime
 from datetime import tzinfo
 import sys
 from collections import namedtuple
+from argparse import Namespace
 
 import config
 import plaidapi
 import transactionsdb
 from plaidapi import PlaidAccountUpdateNeeded, PlaidError
 
+
+# TODO - Refactor o(separate plaid sync from google sync from ml etc.
 
 def parse_options():
     parser = argparse.ArgumentParser(description="Synchronize Plaid transactions and balances to local SQLite3 database")
@@ -82,14 +85,22 @@ class PlaidSynchronizer:
         try:
             if verbose:
                 print("Account: %s" % self.account_name)
-                print("    Fetching item (bank login) info")
-            self.item_info = self.plaid.get_item_info(self.access_token)
 
+            # Fetch balances and save out into balances table
             balances = None
             if fetch_balances:
                 if verbose:
-                    print("     Fetching current balances")
+                    print("Fetching current balances")
                 balances = self.plaid.get_account_balance(self.access_token)
+
+                if verbose:
+                    print("Saving current balances")
+                for balance in balances:
+                    if verbose:
+                        print(f"Saving balance for {balance.account_id}")
+                    self.db.save_balance(balance)
+            
+            # Fetch account info and save out into account_info table
 
             if verbose:
                 print("    Fetching transactions from %s to %s" % (start_date, end_date))
@@ -104,8 +115,8 @@ class PlaidSynchronizer:
             account_ids     = set( t.account_id for t in self.transactions.values() )
             tids_existing   = set( self.db.get_transaction_ids( start_date, end_date, list(account_ids) ) )
             tids_fetched    = set( self.transactions.keys() )
-            tids_new        = tids_fetched .difference( tids_existing )
-            tids_to_archive = tids_existing.difference( tids_fetched  )
+            tids_new        = tids_fetched.difference( tids_existing )
+            tids_to_archive = tids_existing.difference( tids_fetched )
 
             self.add_transactions( self.db.fetch_transactions_by_id(tids_to_archive) )
 
@@ -271,25 +282,18 @@ def link_account(cfg: config.Config, plaid: plaidapi.PlaidAPI, account_name: str
     sys.exit(0)
 
 
-def main():
-    args = parse_options()
-    cfg = config.Config(args.config_file)
-    db = transactionsdb.TransactionsDB(cfg.get_dbfile())
-    plaid = plaidapi.PlaidAPI(**cfg.get_plaid_client_config())
-
-    if args.update_account:
-        update_account(cfg, plaid, args.update_account)
+def sync_plaid_data(update_account, link_account, cfg, plaid, start_date, end_date, db, fetch_balances, verbose):
+    # Update accounts if stated in arguments
+    if update_account:
+        update_account(cfg, plaid, update_account)
         return
 
-    if args.link_account:
-        link_account(cfg, plaid, args.link_account)
+    # Link new accounts if stated in arguments
+    if link_account:
+        link_account(cfg, plaid, link_account)
         return
-    
-    if args.check_txns:
-        res = db.check_transaction_head()
-        print(type(res.fetchone()))
-        print(res.fetchone())
 
+    # Check for configured accounts in config
     if not cfg.get_enabled_accounts():
         print("There are no configured Plaid accounts in the specified "
               "configuration file.")
@@ -297,26 +301,21 @@ def main():
         print("Re-run with --link-account to add one.")
         sys.exit(1)
 
+    # Begin account sync process
     results = {}
 
     def process_account(account_name):
-        print(f'{account_name} syncing') # DEBUG
         sync = PlaidSynchronizer(db, plaid, account_name, cfg.get_account_access_token(account_name))
-        sync.sync(args.start_date, args.end_date, fetch_balances=args.balances, verbose=args.verbose)
-        print(f'{account_name} synced') # DEBUG
+        sync.sync(start_date, end_date, fetch_balances=fetch_balances, verbose=verbose)
         results[account_name] = sync
 
-    tqdm = try_get_tqdm() if not args.verbose else None
+    tqdm = try_get_tqdm() if not verbose else None
     if tqdm:
         for account_name in tqdm(cfg.get_enabled_accounts(), desc="Synchronizing Plaid accounts", leave=False):
-            print(f'{account_name} processing') # DEBUG
             process_account(account_name)
-            print(f'{account_name} processed') # DEBUG
     else:
         for account_name in cfg.get_enabled_accounts():
-            print(f'{account_name} processing') # DEBUG
             process_account(account_name)
-            print(f'{account_name} processed') # DEBUG
 
     print("")
     print("")
@@ -356,6 +355,27 @@ def main():
             print("%-5s: Last successful update > 3 days ago!  Last failure: %s  Last success: %s" % (
                 account_name, sync.item_info.ts_last_failed_update, sync.item_info.ts_last_successful_update
             ))
+
+
+def main():
+    # args = parse_options()
+
+    # Collect configuration and options
+    args = Namespace(balances=True, check_txns=False, config_file='config/budget_config', 
+                     end_date=datetime.date(2023, 8, 6), link_account=None, start_date=datetime.date(2023, 7, 7), 
+                     update_account=None, verbose=False)
+    cfg = config.Config(args.config_file)
+    db = transactionsdb.TransactionsDB(cfg.get_dbfile())
+    plaid = plaidapi.PlaidAPI(**cfg.get_plaid_client_config())
+
+    # Sync plaid data
+    sync_plaid_data(args.update_account, args.link_account, cfg, plaid, args.start_date, args.end_date, db,
+                    args.balances, args.verbose)
+
+    # TODO - add google steps from other code
+    
+
+    
 
 if __name__ == '__main__':
     main()
