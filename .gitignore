@@ -1,2 +1,5 @@
 # Config folder
 config/
+
+# DS Store
+.DS_Store
