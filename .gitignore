@@ -3,3 +3,6 @@ config/
 
 # DS Store
 *.DS_Store
+
+# VSCode Workspaces
+*.code-workspace
