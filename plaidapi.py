@@ -23,18 +23,27 @@ class AccountBalance:
     def __init__(self, data):
         # account_id | bal_amount | bal_date
         self.account_id = data['account_id']
-        self.account_name = data['account_name']
-        self.bal_amount = data['balances']['current']
+        self.account_name = data['name']
         self.bal_date = datetime.date.today()
+        self.bal_current = data['balances']['current']
+        self.bal_available = data['balances']['available']
+        self.bal_limit = data['balances']['limit']
+        self.bal_currency_code = data['balances']['iso_currency_code']
+        if type(data) == dict:
+            self.raw_data = data
+        else:
+            self.raw_data = data.to_dict()
 
 
 class AccountInfo:
-    def __init__(self, data):
+    def __init__(self, data, parent_name):
         # account_id | account_name | account_type | account_subtype | account_number
         self.account_id = data['account_id']
+        self.account_name_parent = parent_name
         self.account_name = data['name']
-        self.account_type = data['type']
-        self.account_subtype = data['subtype']
+        self.account_name_ofcl = data['official_name']
+        self.account_type = str(data['type'])
+        self.account_subtype = str(data['subtype'])
         self.account_number = data['mask']
 
 
@@ -53,11 +62,10 @@ class Transaction:
         self.txn_name = data['name']
         self.txn_name_plaid = data['merchant_name']
         self.txn_amount = data['amount']
-        self.txn_category_plaid = data['category']
-        self.txn_code = data['code']
+        self.txn_cat_plaid = data['personal_finance_category']['primary']
+        self.txn_cat_plaid_dtl = data['personal_finance_category']['detailed']
         self.pending = data['pending']
-        self.created = datetime.date.today()
-        self.updated = datetime.date.today()
+        self.create_dt = datetime.date.today()
 
     def __str__(self):
         return "%s %s %s - %4.2f %s" % ( self.date, self.transaction_id, self.merchant_name, self.amount, self.currency_code )
@@ -232,13 +240,13 @@ class PlaidAPI():
     
 
     @wrap_plaid_error
-    def get_account_info(self, access_token:str)->List[AccountBalance]:
+    def get_account_info(self, access_token:str, parent_name:str)->List[AccountBalance]:
         """
         Returns the account information from balances request
         """
         request = AccountsBalanceGetRequest(access_token=access_token)
         resp = self.client.accounts_balance_get(request)
-        return list( map( AccountInfo, resp['accounts'] ) )
+        return list( map( AccountInfo, resp['accounts'], [parent_name]*len(resp['accounts']) ) )
 
 
     @wrap_plaid_error
@@ -251,7 +259,9 @@ class PlaidAPI():
                         start_date=start_date,
                         end_date=end_date,
                         options=TransactionsGetRequestOptions(
-                            include_personal_finance_category=True
+                            include_personal_finance_category=True,
+                            count=500,
+                            offset=len(ret)
                         )
             )
             response = self.client.transactions_get(request)

@@ -3,98 +3,83 @@
 import sqlite3
 import json
 import datetime
+import pandas as pd
+import numpy as np
 from typing import List, Optional, Dict
 from plaidapi import AccountBalance, AccountInfo, Transaction as PlaidTransaction
 
-# TODO - check primary key on transactions
-# TODO - get rid of archive
+# TODO - use dbfolder in read/write
 
 def build_placeholders(list):
     return ",".join(["?"]*len(list))
 
 class TransactionsDB():
-    def __init__(self, dbfolder:str):
-        self.dbfolder = dbfolder
+    def __init__(self, dbfolder: str):
+        self.dbfolder = dbfolder if dbfolder[-1] != '/' else dbfolder[:-1]
+        self.paths = {
+            'txns': self.dbfolder + '/raw_transactions.parquet',
+            'txns_backup': self.dbfolder + '/backup/raw_transactions.parquet',
+            'balances': self.dbfolder + '/raw_balances.parquet',
+            'balances_backup': self.dbfolder + '/backup/raw_balances.parquet',
+            'account_info': self.dbfolder + '/account_info.parquet',
+            'account_info_backup': self.dbfolder + '/backup/account_info.parquet'
+        }
 
     def get_transaction_ids(self, start_date: datetime.date, end_date: datetime.date, account_ids: List[str]) -> List[str]:
-        c = self.conn.cursor()
-        res = c.execute("""
-                select transaction_id from transactions
-                where json_extract(plaid_json, '$.date') between ? and ?
-                and account_id in ({PARAMS})
-                and archived is null
-            """.replace("{PARAMS}", build_placeholders(account_ids)),
-            [start_date.strftime("%Y-%m-%d"), end_date.strftime("%Y-%m-%d")] + list(account_ids)
-        )
-        return [r[0] for r in res.fetchall()]
-    
-    def check_transaction_head(self):
-        c = self.conn.cursor()
-        res = c.execute("""
-                        select * from transactions limit 10
-                        """)
-        return res
+        try:
+            txns = pd.read_parquet(self.paths['txns'])
+            txn_ids = (
+                txns
+                [txns['account_id'].isin(account_ids)]
+                ['txn_id'].tolist()
+            )
+        except:
+            txn_ids = []
+        return txn_ids
 
-    def archive_transactions(self, transaction_ids: List[str]):
-        c = self.conn.cursor()
-        c.execute("""
-                update transactions set archived = strftime('%Y-%m-%dT%H:%M:%SZ', 'now')
-                where archived is null
-                and transaction_id in ({PARAMS})
-                """.replace("{PARAMS}", build_placeholders(transaction_ids)),
-                  list(transaction_ids)
-                  )
+    def save_transactions(self, transactions: PlaidTransaction):
+        cols = ['account_id', 'txn_id', 'txn_date', 'txn_name', 'txn_name_plaid', 'txn_amount', 'txn_cat_plaid', 
+                'txn_cat_plaid_dtl', 'create_dt', 'raw_data']
+        vals = [[getattr(t, col) for t in transactions] for col in cols]
+        new_txns = pd.DataFrame(dict(zip(cols, vals)))
+        new_txns['archive_dt'] = np.nan
+        new_txns['current'] = True
 
-        self.conn.commit()
+        try:
+            existing_txns = pd.read_parquet(self.paths['txns'])
+            existing_txns.to_parquet(self.paths['txns_backup'])
+            out_txns = pd.concat([existing_txns, new_txns], ignore_index=True)
+        except:
+            out_txns = new_txns
+        
+        out_txns.to_parquet(self.paths['txns'])
 
-    def save_transaction(self, transaction: PlaidTransaction):
-        c = self.conn.cursor()
-        c.execute("""
-            insert into
-                transactions(account_id, transaction_id, created, updated, archived, plaid_json)
-                values(?,?,strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),null,?)
-                on conflict(account_id, transaction_id) DO UPDATE
-                    set updated    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-                        plaid_json = excluded.plaid_json
-        """, [transaction.account_id, transaction.transaction_id, json.dumps(transaction.raw_data, default=str)])
+    def save_account_info(self, account_info: AccountInfo):
+        cols = ['account_id', 'account_name', 'account_name_parent', 'account_name_ofcl', 'account_type', 'account_subtype', 'account_number']
+        vals = [[getattr(ai, col) for ai in account_info] for col in cols]
+        new_info = pd.DataFrame(dict(zip(cols, vals)))
 
-        self.conn.commit()
+        try:
+            existing_info = pd.read_parquet(self.paths['account_info'])
+            existing_info.to_parquet(self.paths['account_info_backup'])
+            out_info = pd.concat([existing_info, new_info], ignore_index=True)
+            out_info = out_info.drop_duplicates(subset=['account_id'])
+        except:
+            out_info = new_info      
+        
+        out_info.to_parquet(self.paths['account_info'])
 
-    def save_item_info(self, item_info: AccountInfo):
-        c = self.conn.cursor()
+    def save_balances(self, balances: AccountBalance):
+        cols = ['account_id', 'account_name', 'bal_available', 'bal_limit', 'bal_currency_code', 'bal_current', 'bal_date', 'raw_data']
+        vals = [[getattr(b, col) for b in balances] for col in cols]
+        new_bals = pd.DataFrame(dict(zip(cols, vals)))
 
-        c.execute("""
-            insert into
-                items(item_id, institution_id, consent_expiration, last_failed_update, last_successful_update, updated, plaid_json)
-                values(?,?,?,?,?,strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),?)
-                on conflict(item_id) DO UPDATE
-                    set updated    = strftime('%Y-%m-%dT%H:%M:%SZ', 'now'),
-                    institution_id = excluded.institution_id,
-                    consent_expiration = excluded.consent_expiration,
-                    last_failed_update = excluded.last_failed_update,
-                    last_successful_update = excluded.last_successful_update,
-                    plaid_json = excluded.plaid_json
-        """, [item_info.item_id, item_info.institution_id, item_info.ts_consent_expiration, item_info.ts_last_failed_update, 
-              item_info.ts_last_successful_update, json.dumps(item_info.raw_data, default=str)])
+        try:
+            existing_bals = pd.read_parquet(self.paths['balances'])
+            existing_bals.to_parquet(self.paths['balances_backup'])
+            out_bals = pd.concat([existing_bals, new_bals], ignore_index=True)
+            out_bals = out_bals.drop_duplicates(subset=['account_id', 'bal_date'])
+        except:
+            out_bals = new_bals
 
-        self.conn.commit()
-
-    def save_balance(self, balance: list):
-        # Create pandas table with balances
-
-        # Load existing file and append if available
-
-        # Write out to parquet
-
-        pass
-
-    def fetch_transactions_by_id(self, transaction_ids: List[str]) -> List[PlaidTransaction]:
-        c = self.conn.cursor()
-        r = c.execute("""
-            select plaid_json from transactions
-            where transaction_id in ({PARAMS})
-        """.replace("{PARAMS}", build_placeholders(transaction_ids)), list(transaction_ids))
-        return [ 
-            PlaidTransaction(json.loads(d[0]))
-            for d in r.fetchall()
-        ]
+        out_bals.to_parquet(self.paths['balances'])
