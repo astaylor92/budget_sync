@@ -8,7 +8,7 @@ import numpy as np
 from typing import List, Optional, Dict
 from plaidapi import AccountBalance, AccountInfo, Transaction as PlaidTransaction
 
-# TODO - use dbfolder in read/write
+# TODO - Specify the tabel schema
 
 def build_placeholders(list):
     return ",".join(["?"]*len(list))
@@ -77,7 +77,7 @@ class TransactionsDB():
         try:
             existing_bals = pd.read_parquet(self.paths['balances'])
             existing_bals.to_parquet(self.paths['balances_backup'])
-            out_bals = pd.concat([existing_bals, new_bals], ignore_index=True)
+            out_bals = pd.concat([existing_bals, new_bals.astype], ignore_index=True)
             out_bals = out_bals.drop_duplicates(subset=['account_id', 'bal_date'])
         except:
             out_bals = new_bals

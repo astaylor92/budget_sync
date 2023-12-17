@@ -43,8 +43,8 @@ class Config:
     def environment(self):
         return self.config['PLAID']['environment']
 
-    def get_dbfile(self) -> str:
-        return self.config['plaid-sync']['dbfile']
+    def get_dbfiles(self) -> str:
+        return self.config['plaid-sync']['dbfile_win'], self.config['plaid-sync']['dbfile_mac']
 
     def get_all_config_sections(self) -> str:
         """
