@@ -96,6 +96,7 @@
       },
       onExit: function (err, metadata) {
         if (err != null) {
+          console.log(err, metadata)
           // The user encountered a Plaid API error prior to exiting.
         }
       }
