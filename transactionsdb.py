@@ -9,9 +9,6 @@ from typing import List, Optional, Dict
 from plaidapi import AccountBalance, AccountInfo, Transaction as PlaidTransaction
 from Levenshtein import distance
 
-# TODO - Specify the table fields as a dictionary attribute 
-# TODO - Specify data types 
-
 def build_placeholders(list):
     return ",".join(["?"]*len(list))
 
@@ -63,6 +60,16 @@ class TransactionsDB():
             'current': 'object',
             'raw_data': 'object'
         }
+        self.bal_types = {
+            'account_id': 'object', 
+            'account_name': 'object', 
+            'bal_available': 'float64', 
+            'bal_limit': 'float64', 
+            'bal_currency_code': 'object', 
+            'bal_current': 'float64', 
+            'bal_date': 'datetime64[ns]', 
+            'raw_data': 'object'
+        }
 
     def get_transaction_ids(self, start_date: datetime.date, end_date: datetime.date, account_ids: List[str]) -> List[str]:
         try:
@@ -83,6 +90,7 @@ class TransactionsDB():
         new_txns = pd.DataFrame(dict(zip(cols, vals)))
         new_txns['archive_dt'] = np.nan
         new_txns['current'] = True
+        new_txns = new_txns.astype({k: v for k, v in self.txn_types.items() if k in new_txns.columns})
 
         try:
             existing_txns = pd.read_parquet(self.paths['raw_txns'])
@@ -102,6 +110,7 @@ class TransactionsDB():
                 .assign(txn_cat='')
                 .assign(txn_cat_flag=False)
             )
+        raw_txn_adj = raw_txn_adj.astype({k: v for k, v in self.txn_types.items() if k in raw_txn_adj.columns})
         try:
             processed_txns = pd.read_parquet(self.paths['processed_txns'])
             processed_txns.to_parquet(self.paths['processed_txns_backup_1'])
@@ -224,17 +233,80 @@ class TransactionsDB():
         cols = ['account_id', 'account_name', 'bal_available', 'bal_limit', 'bal_currency_code', 'bal_current', 'bal_date', 'raw_data']
         vals = [[getattr(b, col) for b in balances] for col in cols]
         new_bals = pd.DataFrame(dict(zip(cols, vals)))
+        new_bals = new_bals.astype({k: v for k, v in self.bal_types.items() if k in new_bals.columns})
 
         try:
             existing_bals = pd.read_parquet(self.paths['raw_balances'])
             existing_bals.to_parquet(self.paths['raw_balances_backup'])
-            out_bals = pd.concat([existing_bals, new_bals.astype], ignore_index=True)
+            out_bals = pd.concat([existing_bals, new_bals], ignore_index=True)
             out_bals = out_bals.drop_duplicates(subset=['account_id', 'bal_date'])
         except:
             out_bals = new_bals
 
         out_bals.to_parquet(self.paths['raw_balances'])
 
-    def process_balances(self):
-        
+    def process_balances(self, start_date):
+        # Read in account info
+        account_info = pd.read_parquet(self.paths['account_info'])
+
+        # Read in raw balances
+        raw_bals = pd.read_parquet(self.paths['raw_balances'])
+        raw_bals_latest = (
+            raw_bals
+            .merge(account_info[['account_id', 'account_name_parent']],
+                   on='account_id',
+                   how='inner')
+            [['account_name_parent', 'bal_current', 'bal_date']]
+            .groupby(['account_name_parent', 'bal_date'])
+            .agg({'bal_current':'sum'}).reset_index()
+            .assign(rank=lambda x: x.groupby('account_name_parent')['bal_date'].rank(method='first', ascending=True))
+            .query('rank==1')
+            .drop(columns=['rank'])
+        )
+
+        # Read in all transactions, summarize by day and parent account
+        processed_txns = pd.read_parquet(self.paths['processed_txns'])
+        dates = pd.DataFrame({'txn_date': pd.date_range(start_date, datetime.datetime.today())})
+        account_dates = (
+            dates.assign(keycol=1)
+            .merge(processed_txns.assign(keycol=1)[['account_name_parent', 'keycol']].drop_duplicates(),
+                   on='keycol',
+                   how='inner')
+            .drop(columns=['keycol'])
+        )
+        processed_txns_byday = (
+            processed_txns
+            .groupby(['account_name_parent', 'txn_date'])
+            .agg({'txn_amount': 'sum'})
+            .reset_index()
+            .merge(account_dates, on=['account_name_parent', 'txn_date'], how='right')
+            .fillna(value={'txn_amount': 0})
+            .rename(columns={'txn_date':'bal_date'})
+        )
+
+        # Do cumulative math to get the historical view of balances by day by parent account, back to start_date
+        processed_bals_new = (
+            raw_bals_latest
+            .merge(processed_txns_byday, on=['bal_date', 'account_name_parent'], how='outer')
+            .fillna({'bal_current':0, 'txn_amount': 0})
+            .sort_values(by=['account_name_parent', 'bal_date'], ascending=False, axis=0)
+            .assign(new_bal=lambda x: x['bal_current'] + x['txn_amount'])
+            .assign(out_bal=lambda x: x.groupby('account_name_parent')['new_bal'].cumsum())
+            .drop(columns=['new_bal', 'txn_amount', 'bal_current'])
+            .rename(columns={'out_bal':'bal_processed'})
+            .reset_index(drop=True)
+        )
+
+        # Append to processed bals, create if doesn't exist
+        try:
+            processed_bals = pd.read_parquet(self.paths['processed_balances'])
+            processed_bals.to_parquet(self.paths['processed_balances_backup'])
+            out_bals = pd.concat([processed_bals, processed_bals_new]).drop_duplicates(['account_name_parent', 'bal_date'])
+        except:
+            out_bals = processed_bals_new
+
+        out_bals.to_parquet(self.paths['processed_balances'])
+
+    def process_bal_summaries(self):
+        processed_bals = pd.read_parquet(self.paths['processed_balances'])
         pass

@@ -39,12 +39,12 @@ class GSheetSynchronizer():
                 else:
                     flow = InstalledAppFlow.from_client_secrets_file(
                         self.creds_path, self.scopes)
-                    creds = flow.run_local_server(port=0)
+                    self.creds = flow.run_local_server(port=0)
                 with open(self.token_path, 'wb') as token:
                     pickle.dump(self.creds, token)
         except:
             os.remove(self.token_path)
-            self.gsheet_api_check()
+            self.gsheet_pull_init()
     
     def gsheet_push_init(self):
         self.gc = pygsheets.authorize(service_file=self.service_path)

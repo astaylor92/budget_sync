@@ -10,7 +10,7 @@ def main():
 
     # Collect configuration and options
     # args = Namespace(balances=True, check_txns=False, config_file='config/budget_config', 
-    #                  end_date=datetime.date(2023,11,30), account_link=None, start_date=datetime.date(2023, 11, 1), 
+    #                  end_date=datetime.date.today(), account_link=None, start_date=datetime.date(2023, 11, 1), 
     #                  account_update=None, verbose=True)
     
     if os.path.exists(args.config_file):
@@ -51,7 +51,7 @@ def main():
 
     # Update categories from gsheet
     db.sync_categories()
-
+    
     # Update 'training' data
     db.update_training_data()
 
@@ -61,17 +61,28 @@ def main():
     # Push transactions to Google
     gs.push_gsheet_txns()
 
-    # TODO - deal with income
+    # Backfill balances in processed_balances using transactions
+    db.process_balances(args.start_date)
 
-    # TODO - double-check signs of all outputs
+    # TODO - process income
 
-    # TODO - Backfill balances in processed_balances using transactions
-
-    # TODO - push balances and summaries to Google
+    # TODO - push income to Google
 
     # TODO - add printouts / verbose language throughout
 
-    # TODO - address ndarray from ragged nested sequencys warning
+    # TODO - Specify dtypes in transactionsdb.py
+    
+    # TODO - test each function fully, adding/removing try/except statements as needed
+
+    # TODO - test end-to-end (from blank, then adding transactions & pulling down updated transactions)
+
+    # TODO - Fix chase
+
+    ## BACKLOG
+    # TODO - Specify the table fields as a dictionary attribute 
+    # TODO - Automate the running & date setting
+    # TODO - pull out income and update
+    # TODO - address ndarray from ragged nested sequences warning
 
 if __name__ == '__main__':
     main()
