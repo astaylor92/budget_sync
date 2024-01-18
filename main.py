@@ -12,6 +12,11 @@ def main():
     # args = Namespace(balances=True, check_txns=False, config_file='config/budget_config', 
     #                  end_date=datetime.date.today(), account_link=None, start_date=datetime.date(2023, 11, 1), 
     #                  account_update=None, verbose=True)
+
+    # args = Namespace(balances=True, check_txns=False, config_file='config/budget_config', 
+    #                  end_date=datetime.date.today(), account_link=None, start_date=datetime.date(2024, 1, 1), 
+    #                  account_update=None, verbose=True, manual_acct='G:\\My Drive\\01-Banking_Ins\\Budget_Data\\data\\manual\\accnt_info_out_20240117.csv',
+    #                  manual_txn='G:\\My Drive\\01-Banking_Ins\\Budget_Data\\data\\manual\\chase_txn_out_20240117.csv')
     
     if os.path.exists(args.config_file):
         config_file = args.config_file
@@ -37,6 +42,13 @@ def main():
     sync_plaid_data(args.account_update, args.account_link, cfg, papi, args.start_date, args.end_date, db,
                     args.balances, args.verbose)
     
+    # Sync the manual files
+    if args.manual_acct:
+        db.save_account_info_csv(args.manual_acct)
+    
+    if args.manual_txn:
+        db.save_transactions_csv(args.manual_txn)
+    
     # Add new data from raw_transactions to processed_transactions
     db.process_transactions()
     
@@ -45,9 +57,9 @@ def main():
     spreadsheet_id = "1wBUTPjrgRRtQr0AdqsBwb9VckssfuiQRVBrds70Jp-g"
     spreadsheet_url = "https://docs.google.com/spreadsheets/d/1wBUTPjrgRRtQr0AdqsBwb9VckssfuiQRVBrds70Jp-g/edit#gid=1784836909"
     txn_sheets = ["'2_Andrew_Transactions'!B:H", "'2_Natalie_Transactions'!B:H", "'2_Joint_Transactions'!B:H"]
-    start_row = 3
+    num_fields = 7
     gs = GSheetSynchronizer(db, token_path, creds_path, service_path, scopes, spreadsheet_id, spreadsheet_url)
-    gs.update_gsheet_txns(txn_sheets=txn_sheets, start_row=start_row)
+    gs.update_gsheet_txns(txn_sheets=txn_sheets, num_fields=num_fields)
 
     # Update categories from gsheet
     db.sync_categories()
@@ -75,6 +87,8 @@ def main():
     # TODO - test each function fully, adding/removing try/except statements as needed
 
     # TODO - test end-to-end (from blank, then adding transactions & pulling down updated transactions)
+
+    # TODO - reset all data for 2024 (including resetting training data)
 
     # TODO - Fix chase
 

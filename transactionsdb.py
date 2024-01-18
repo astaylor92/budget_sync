@@ -57,6 +57,7 @@ class TransactionsDB():
             'txn_cat_plaid_dtl': 'object',
             'create_dt': 'datetime64[ns]',
             'archive_dt': 'datetime64[ns]',
+            'txn_cat_flag': 'bool',
             'current': 'object',
             'raw_data': 'object'
         }
@@ -82,6 +83,21 @@ class TransactionsDB():
         except:
             txn_ids = []
         return txn_ids
+    
+    def save_transactions_csv(self, csv_path):
+        new_txns = pd.read_csv(csv_path)
+        new_txns['archive_dt'] = np.nan
+        new_txns['current'] = True
+        new_txns = new_txns.astype({k: v for k, v in self.txn_types.items() if k in new_txns.columns})
+
+        try:
+            existing_txns = pd.read_parquet(self.paths['raw_txns'])
+            existing_txns.to_parquet(self.paths['raw_txns_backup'])
+            out_txns = pd.concat([existing_txns, new_txns], ignore_index=True)
+        except:
+            out_txns = new_txns
+        
+        out_txns.to_parquet(self.paths['raw_txns'])
 
     def save_transactions(self, transactions: PlaidTransaction):
         cols = ['account_id', 'txn_id', 'txn_date', 'txn_name', 'txn_name_plaid', 'txn_amount', 'txn_cat_plaid', 
@@ -124,10 +140,10 @@ class TransactionsDB():
         gsheet_txns = (
             gsheet_txns
             .rename(columns=self.gsheet_txn_map)
+            .assign(txn_cat_flag=lambda x: x['txn_cat_flag'].map({'True':True, 'False':False}))
             .astype({k:v for k, v in self.txn_types.items() if k in gsheet_txns.columns})
         )
-        gsheet_txns['txn_date'] = pd.TimedeltaIndex(gsheet_txns['txn_date'], unit='d') + datetime.datetime(1899, 12, 30)
-        ordered_cols = sorted(gsheet_txns.columns, reverse=True)
+        gsheet_txns['txn_date'] = pd.TimedeltaIndex(gsheet_txns['txn_date'].astype('int64'), unit='d') + datetime.datetime(1899, 12, 30)
         gsheet_txns['txn_name'] = gsheet_txns['txn_name'].astype('str')
         gsheet_txns['txn_id'] = gsheet_txns['txn_id'].astype('str')
         try:
@@ -172,6 +188,19 @@ class TransactionsDB():
             out_cat = new_cat_data
 
         out_cat.to_parquet(self.paths['cat_data'])
+
+    def save_account_info_csv(self, csv_path):
+        new_info = pd.read_csv(csv_path)
+
+        try:
+            existing_info = pd.read_parquet(self.paths['account_info'])
+            existing_info.to_parquet(self.paths['account_info_backup'])
+            out_info = pd.concat([existing_info, new_info], ignore_index=True)
+            out_info = out_info.drop_duplicates(subset=['account_id'])
+        except:
+            out_info = new_info      
+        
+        out_info.to_parquet(self.paths['account_info'])
 
     def save_account_info(self, account_info: AccountInfo):
         cols = ['account_id', 'account_name', 'account_name_parent', 'account_name_ofcl', 'account_type', 'account_subtype', 'account_number']

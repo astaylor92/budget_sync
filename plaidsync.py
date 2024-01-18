@@ -34,6 +34,9 @@ def parse_options():
                                                                                                 "To be used when Plaid returns an error that credetials are out of date for an account.")
     parser.add_argument("--link-account",     dest="account_link",                         help="Run with this option to set up an entirely new account through Plaid.")
     parser.add_argument("--check-txns",       dest="check_txns",     action='store_true',  help="Run with this option to print the head of transactions")
+    parser.add_argument("--manual-path-txn",    dest="manual_txn",                         help="Populate this to direct to a CSV for raw_transaction upload")
+    parser.add_argument("--manual-path-acct",    dest="manual_acct",                       help="Populate this to direct to a CSV for account_info upload")
+
     args = parser.parse_args()
 
     if not args.start_date:

@@ -69,17 +69,18 @@ class GSheetSynchronizer():
             print("COMPLETE: Data copied")
             return data
         
-    def update_gsheet_txns(self, txn_sheets, start_row):
+    def update_gsheet_txns(self, txn_sheets, num_fields):
         """Pulls and combines all transaction google sheets"""
         # Pull down each transaction tab into a list of dataframes
         gsheet_txn_dfs = []
         for sheet in txn_sheets:
             data = self.pull_sheet_data(sheet)
-            data_arr = np.array(data[start_row+1:])
+            data = [d for d in data if len(d) == num_fields]
+            data_arr = np.array(data[1:])
             data_arr = data_arr[[len(x) > 6 for x in data_arr]]
             if data_arr.shape[0] == 0:
                 return
-            df = pd.DataFrame(data_arr.tolist(), columns=data[start_row])
+            df = pd.DataFrame(data_arr.tolist(), columns=data[0])
             gsheet_txn_dfs.append(df)
         
         # Append dataframes
