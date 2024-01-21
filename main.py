@@ -75,6 +75,10 @@ def main():
 
     # Backfill balances in processed_balances using transactions
     db.process_balances(args.start_date)
+    
+    # TODO - create environment on PC to match Mac
+
+    # TODO - update American Express account
 
     # TODO - process income
 
