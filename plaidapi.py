@@ -271,6 +271,7 @@ class PlaidAPI():
             ret += [
                 Transaction(t)
                 for t in response['transactions']
+                if not t['pending']
             ]
 
             if status_callback: status_callback(len(ret), total_transactions)

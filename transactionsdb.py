@@ -93,7 +93,7 @@ class TransactionsDB():
         try:
             existing_txns = pd.read_parquet(self.paths['raw_txns'])
             existing_txns.to_parquet(self.paths['raw_txns_backup'])
-            out_txns = pd.concat([existing_txns, new_txns], ignore_index=True)
+            out_txns = pd.concat([existing_txns, new_txns], ignore_index=True).drop_duplicates(subset=['txn_id'])
         except:
             out_txns = new_txns
         
@@ -111,7 +111,7 @@ class TransactionsDB():
         try:
             existing_txns = pd.read_parquet(self.paths['raw_txns'])
             existing_txns.to_parquet(self.paths['raw_txns_backup'])
-            out_txns = pd.concat([existing_txns, new_txns], ignore_index=True)
+            out_txns = pd.concat([existing_txns, new_txns], ignore_index=True).drop_duplicates(subset=['txn_id'])
         except:
             out_txns = new_txns
         
