@@ -9,3 +9,6 @@ data/
 
 # VSCode Workspaces
 *.code-workspace
+
+# Pycache files
+__pycache__/
