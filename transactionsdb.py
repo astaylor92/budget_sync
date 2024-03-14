@@ -157,7 +157,13 @@ class TransactionsDB():
 
     def sync_categories(self):
         try:
-            gsheet_txns = pd.read_parquet(self.paths['gsheet_txns']).rename(columns={'txn_cat': 'txn_cat_new', 'txn_cat_flag':'txn_cat_flag_new'})
+            gsheet_txns = (
+                pd.read_parquet(self.paths['gsheet_txns'])
+                .rename(columns={'txn_cat': 'txn_cat_new', 
+                                 'txn_cat_flag':'txn_cat_flag_new',
+                                 'txn_date': 'txn_date_new',
+                                 'txn_amount': 'txn_amount_new'})
+            )
         except:
             print("No categories synced - no gsheet data")
             return
@@ -168,8 +174,12 @@ class TransactionsDB():
             .merge(gsheet_txns[['txn_id', 'txn_cat_new', 'txn_cat_flag_new']], how='left', on=['txn_id'])
             .assign(txn_cat_out = lambda x: x['txn_cat_new'].fillna(x['txn_cat']))
             .assign(txn_cat_flag_out = lambda x: x['txn_cat_flag_new'].fillna(x['txn_cat_flag']))
-            .drop(columns=['txn_cat', 'txn_cat_new', 'txn_cat_flag', 'txn_cat_flag_new'])
-            .rename(columns={'txn_cat_out': 'txn_cat', 'txn_cat_flag_out': 'txn_cat_flag'})
+            .assign(txn_date_out = lambda x: x['txn_date_new'].fillna(x['txn_date']))
+            .assign(txn_amount_out = lambda x: x['txn_amount_new'].fillna(x['txn_amount']))
+            .drop(columns=['txn_cat', 'txn_cat_new', 'txn_cat_flag', 'txn_cat_flag_new', 
+                           'txn_date', 'txn_date_new', 'txn_amount', 'txn_amount_new'])
+            .rename(columns={'txn_cat_out': 'txn_cat', 'txn_cat_flag_out': 'txn_cat_flag',
+                             'txn_date_out': 'txn_date', 'txn_amount_out': 'txn_amount'})
         )
         out_txns.to_parquet(self.paths['processed_txns'])
 
